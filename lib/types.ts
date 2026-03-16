@@ -25,17 +25,34 @@ export interface Exercise {
   targetRepsMin: number
   /** Repeticiones objetivo: máximo del rango (ej. 12) */
   targetRepsMax: number
-  /** Peso actual para este ejercicio (persistido entre sesiones) */
+  /** Peso actual para este ejercicio (persistido por rutina entre sesiones) */
   currentWeight: number | null
   sets: WorkoutSet[]
   previousSession: PreviousSession | null
 }
 
+/** Rutina: conjunto de ejercicios con nombre (ej. Empuje, Tracción, Pierna) */
+export interface Routine {
+  id: string
+  name: string
+  exercises: Exercise[]
+}
+
+/** Parámetros para añadir un ejercicio a una rutina (sin id ni sets ni previousSession) */
+export interface NewExerciseParams {
+  name: string
+  targetRpe?: number
+  targetRepsMin?: number
+  targetRepsMax?: number
+  setsCount: number
+}
+
 /** Registro de una sesión para historial y gráficas (volumen = peso × reps × series por ejercicio) */
 export interface SessionRecord {
   date: string // ISO
-  totalVolume: number // suma de (peso × reps) de todas las series de la sesión
-  exerciseVolumes?: { exerciseId: string; volume: number }[] // opcional por ejercicio
+  routineId?: string // rutina con la que se hizo la sesión
+  totalVolume: number
+  exerciseVolumes?: { exerciseId: string; volume: number }[]
 }
 
 export interface Suggestion {
@@ -72,12 +89,12 @@ export function generateSuggestion(exercise: Exercise): Suggestion | null {
 
   return {
     type: 'maintain',
-    message: 'Mantén el peso e intenta completar las repeticiones',
+    message: 'Mantener peso',
     emoji: '💪'
   }
 }
 
-/** Evalúa si en la sesión actual el ejercicio llegó al tope (todas las series al targetRepsMax) */
+/** Evalúa si en la sesión actual el ejercicio llegó al tope (todas las series >= límite superior del rango) */
 export function exerciseHitTargetReps(exercise: Exercise): boolean {
   const completed = exercise.sets.filter((s) => s.completed && s.reps != null && s.weight != null)
   if (completed.length !== exercise.sets.length) return false
@@ -92,18 +109,25 @@ export function exerciseUsedCurrentWeight(exercise: Exercise): boolean {
   return withWeight.every((s) => s.weight === w)
 }
 
-/** Sugerencia al terminar entrenamiento: aumentar peso o mantener */
+/**
+ * Lógica de sobrecarga progresiva: se ejecuta al finalizar la rutina.
+ * Si todas las series completadas tienen reps >= límite superior del rango → subir peso (+2.5kg).
+ * Si no → mantener peso.
+ */
+export function checkProgress(exercise: Exercise): 'increase_weight' | 'maintain' {
+  const hitTop = exerciseHitTargetReps(exercise)
+  const usedWeight = exerciseUsedCurrentWeight(exercise)
+  if (hitTop && usedWeight) return 'increase_weight'
+  return 'maintain'
+}
+
+/** Sugerencia al terminar entrenamiento (usa checkProgress por ejercicio): aumentar peso o mantener */
 export function getWorkoutCompletionSuggestion(exercises: Exercise[]): { type: 'increase_weight' | 'maintain'; exerciseNames: string[] }[] {
   const increase: string[] = []
   const maintain: string[] = []
   for (const ex of exercises) {
-    const hitTop = exerciseHitTargetReps(ex)
-    const usedWeight = exerciseUsedCurrentWeight(ex)
-    if (hitTop && usedWeight) {
-      increase.push(ex.name)
-    } else {
-      maintain.push(ex.name)
-    }
+    if (checkProgress(ex) === 'increase_weight') increase.push(ex.name)
+    else maintain.push(ex.name)
   }
   const result: { type: 'increase_weight' | 'maintain'; exerciseNames: string[] }[] = []
   if (increase.length) result.push({ type: 'increase_weight', exerciseNames: increase })

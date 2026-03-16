@@ -1,43 +1,41 @@
 import {
+  Routine,
   Exercise,
   WorkoutSet,
   SessionRecord,
+  NewExerciseParams,
   generateId,
-  exerciseHitTargetReps,
-  exerciseUsedCurrentWeight
+  checkProgress
 } from './types'
 
-const STORAGE_KEY_EXERCISES = 'workout_exercises'
+const STORAGE_KEY_ROUTINES = 'workout_routines'
 const STORAGE_KEY_HISTORY = 'workout_history'
 const WEIGHT_INCREMENT = 2.5
 
 /** Serializa ejercicios para localStorage (Date → string) */
-function serializeExercises(exercises: Exercise[]): string {
-  return JSON.stringify(
-    exercises.map((ex) => ({
-      ...ex,
-      previousSession: ex.previousSession
-        ? {
-            ...ex.previousSession,
-            date: ex.previousSession.date instanceof Date ? ex.previousSession.date.toISOString() : ex.previousSession.date,
-            sets: ex.previousSession.sets.map((s) => ({
-              ...s,
-              completedAt: s.completedAt instanceof Date ? (s.completedAt as Date).toISOString() : s.completedAt
-            }))
-          }
-        : null,
-      sets: ex.sets.map((s) => ({
-        ...s,
-        completedAt: s.completedAt instanceof Date ? (s.completedAt as Date).toISOString() : s.completedAt
-      }))
+function serializeExercises(exercises: Exercise[]): unknown[] {
+  return exercises.map((ex) => ({
+    ...ex,
+    previousSession: ex.previousSession
+      ? {
+          ...ex.previousSession,
+          date: ex.previousSession.date instanceof Date ? ex.previousSession.date.toISOString() : ex.previousSession.date,
+          sets: ex.previousSession.sets.map((s) => ({
+            ...s,
+            completedAt: s.completedAt instanceof Date ? (s.completedAt as Date).toISOString() : s.completedAt
+          }))
+        }
+      : null,
+    sets: ex.sets.map((s) => ({
+      ...s,
+      completedAt: s.completedAt instanceof Date ? (s.completedAt as Date).toISOString() : s.completedAt
     }))
-  )
+  }))
 }
 
 /** Deserializa ejercicios desde localStorage (string → Date; asegura campos de progresión) */
-function deserializeExercises(json: string): Exercise[] {
-  const raw = JSON.parse(json) as Exercise[]
-  return raw.map((ex) => ({
+function deserializeExercises(raw: unknown[]): Exercise[] {
+  return (raw as Exercise[]).map((ex) => ({
     ...ex,
     targetRepsMin: ex.targetRepsMin ?? 8,
     targetRepsMax: ex.targetRepsMax ?? 12,
@@ -59,62 +57,6 @@ function deserializeExercises(json: string): Exercise[] {
   }))
 }
 
-/** Datos iniciales por defecto (primera vez o sin localStorage) */
-export function getInitialWorkout(): Exercise[] {
-  return [
-    {
-      id: generateId(),
-      name: 'Press de Banca',
-      targetRpe: 8,
-      targetRepsMin: 8,
-      targetRepsMax: 12,
-      currentWeight: 80,
-      sets: createEmptySets(4),
-      previousSession: null
-    },
-    {
-      id: generateId(),
-      name: 'Sentadilla',
-      targetRpe: 8,
-      targetRepsMin: 8,
-      targetRepsMax: 12,
-      currentWeight: 100,
-      sets: createEmptySets(4),
-      previousSession: null
-    },
-    {
-      id: generateId(),
-      name: 'Remo con Barra',
-      targetRpe: 7,
-      targetRepsMin: 8,
-      targetRepsMax: 12,
-      currentWeight: 70,
-      sets: createEmptySets(3),
-      previousSession: null
-    },
-    {
-      id: generateId(),
-      name: 'Press Militar',
-      targetRpe: 8,
-      targetRepsMin: 8,
-      targetRepsMax: 12,
-      currentWeight: null,
-      sets: createEmptySets(3),
-      previousSession: null
-    },
-    {
-      id: generateId(),
-      name: 'Peso Muerto Rumano',
-      targetRpe: 7,
-      targetRepsMin: 8,
-      targetRepsMax: 12,
-      currentWeight: 90,
-      sets: createEmptySets(3),
-      previousSession: null
-    }
-  ]
-}
-
 function createEmptySets(count: number): WorkoutSet[] {
   return Array.from({ length: count }, () => ({
     id: generateId(),
@@ -125,28 +67,206 @@ function createEmptySets(count: number): WorkoutSet[] {
   }))
 }
 
-/** Carga ejercicios desde localStorage; si no hay datos, devuelve y persiste el workout inicial */
-export function loadWorkout(): Exercise[] {
-  if (typeof window === 'undefined') return getInitialWorkout()
-  try {
-    const stored = localStorage.getItem(STORAGE_KEY_EXERCISES)
-    if (!stored) {
-      const initial = getInitialWorkout()
-      saveWorkout(initial)
-      return initial
+/** Rutinas semanales por defecto: Lunes a Viernes con ejercicios y rangos de reps definidos */
+export function getDefaultRoutines(): Routine[] {
+  return [
+    {
+      id: 'lunes-empuje',
+      name: 'Lunes: Empuje (Pecho Alto/Hombros)',
+      exercises: [
+        createExercise('Press Inclinado con Barra', 8, 6, 8, 4, null),
+        createExercise('Press Militar con Mancuernas', 8, 8, 10, 3, null),
+        createExercise('Aperturas Inclinadas', 8, 12, 15, 3, null),
+        createExercise('Elevaciones Laterales', 8, 15, 20, 4, null),
+        createExercise('Extensiones tras nuca (Copa)', 8, 12, 12, 3, null)
+      ]
+    },
+    {
+      id: 'martes-traccion',
+      name: 'Martes: Tracción (Amplitud/V-Taper)',
+      exercises: [
+        createExercise('Jalón al Pecho (Agarre Ancho)', 8, 8, 10, 4, null),
+        createExercise('Remo con Barra o Máquina', 8, 10, 10, 3, null),
+        createExercise('Pull-over en Polea Alta', 8, 15, 15, 3, null),
+        createExercise('Face Pulls', 8, 15, 20, 3, null),
+        createExercise('Curl Martillo', 8, 12, 12, 3, null)
+      ]
+    },
+    {
+      id: 'miercoles-pierna',
+      name: 'Miércoles: Pierna (Completo)',
+      exercises: [
+        createExercise('Sentadillas o Prensa', 8, 8, 10, 3, null),
+        createExercise('Peso Muerto Rumano', 8, 10, 12, 3, null),
+        createExercise('Extensiones de Cuádriceps', 8, 15, 15, 3, null),
+        createExercise('Gemelos de pie', 8, 15, 20, 4, null)
+      ]
+    },
+    {
+      id: 'jueves-torso',
+      name: 'Jueves: Torso Estético (Bombeo)',
+      exercises: [
+        createExercise('Press Inclinado con Mancuernas', 8, 10, 12, 3, null),
+        createExercise('Cruces de Polea (Abajo hacia arriba)', 8, 15, 15, 3, null),
+        createExercise('Jalón al Pecho (Supino)', 8, 12, 12, 3, null),
+        createExercise('Elevaciones Laterales en Polea', 8, 15, 15, 4, null),
+        createExercise('Superserie: Curl Barra + Extensiones Polea', 8, 8, 12, 3, null)
+      ]
+    },
+    {
+      id: 'viernes-pierna-retoque',
+      name: 'Viernes: Pierna (Énfasis Isquios) o Retoque',
+      exercises: [
+        createExercise('Curl Femoral (Máquina)', 8, 12, 12, 4, null),
+        createExercise('Zancadas (Lunges)', 8, 12, 12, 3, null),
+        createExercise('Elevaciones Laterales', 8, 15, 20, 4, null),
+        createExercise('Press de Banca Plano', 8, 10, 10, 3, null)
+      ]
     }
-    return deserializeExercises(stored)
-  } catch {
-    return getInitialWorkout()
+  ]
+}
+
+function createExercise(
+  name: string,
+  targetRpe: number,
+  targetRepsMin: number,
+  targetRepsMax: number,
+  setsCount: number,
+  currentWeight: number | null
+): Exercise {
+  return {
+    id: generateId(),
+    name,
+    targetRpe,
+    targetRepsMin,
+    targetRepsMax,
+    currentWeight,
+    sets: createEmptySets(setsCount),
+    previousSession: null
   }
 }
 
-/** Guarda ejercicios en localStorage */
-export function saveWorkout(exercises: Exercise[]): void {
+/** Serializa rutinas para localStorage */
+function serializeRoutines(routines: Routine[]): string {
+  return JSON.stringify(
+    routines.map((r) => ({
+      ...r,
+      exercises: serializeExercises(r.exercises)
+    }))
+  )
+}
+
+/** Deserializa rutinas desde localStorage */
+function deserializeRoutines(json: string): Routine[] {
+  const raw = JSON.parse(json) as { id: string; name: string; exercises: unknown[] }[]
+  return raw.map((r) => ({
+    id: r.id,
+    name: r.name,
+    exercises: deserializeExercises(r.exercises)
+  }))
+}
+
+/** Carga rutinas desde localStorage; si no hay datos o es estructura antigua (solo Push/Pull/Legs), usa las 5 rutinas semanales */
+export function loadRoutines(): Routine[] {
+  if (typeof window === 'undefined') return getDefaultRoutines()
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY_ROUTINES)
+    if (!stored) {
+      const initial = getDefaultRoutines()
+      saveRoutines(initial)
+      return initial
+    }
+    const routines = deserializeRoutines(stored)
+    const expectedIds = ['lunes-empuje', 'martes-traccion', 'miercoles-pierna', 'jueves-torso', 'viernes-pierna-retoque']
+    const hasAllFive = expectedIds.every((id) => routines.some((r) => r.id === id))
+    const hasAnyOld = routines.some((r) => ['empuje', 'traccion', 'pierna'].includes(r.id))
+    if (!hasAllFive || (routines.length <= 3 && hasAnyOld)) {
+      const initial = getDefaultRoutines()
+      saveRoutines(initial)
+      return initial
+    }
+    return routines
+  } catch {
+    return getDefaultRoutines()
+  }
+}
+
+/** Guarda rutinas en localStorage */
+export function saveRoutines(routines: Routine[]): void {
   if (typeof window === 'undefined') return
   try {
-    localStorage.setItem(STORAGE_KEY_EXERCISES, serializeExercises(exercises))
+    localStorage.setItem(STORAGE_KEY_ROUTINES, serializeRoutines(routines))
   } catch (_) {}
+}
+
+/** Obtiene una rutina por ID */
+export function getRoutineById(routineId: string): Routine | undefined {
+  const routines = loadRoutines()
+  return routines.find((r) => r.id === routineId)
+}
+
+/**
+ * Devuelve una copia de los ejercicios de la rutina con sets vacíos para iniciar un entrenamiento.
+ * Incluye los pesos usados la última vez (currentWeight) y previousSession de esa rutina.
+ */
+export function getExercisesForWorkout(routineId: string): Exercise[] {
+  const routine = getRoutineById(routineId)
+  if (!routine) return []
+  return routine.exercises.map((ex) => ({
+    ...ex,
+    id: ex.id,
+    sets: createEmptySets(ex.sets.length)
+  }))
+}
+
+/** Añade un ejercicio a una rutina y persiste en localStorage. Los pesos se inician en null. */
+export function addExerciseToRoutine(routineId: string, params: NewExerciseParams): Exercise | undefined {
+  const routines = loadRoutines()
+  const idx = routines.findIndex((r) => r.id === routineId)
+  if (idx === -1) return undefined
+
+  const setsCount = params.setsCount ?? 3
+  const newEx: Exercise = {
+    id: generateId(),
+    name: params.name.trim() || 'Nuevo ejercicio',
+    targetRpe: params.targetRpe ?? 8,
+    targetRepsMin: params.targetRepsMin ?? 8,
+    targetRepsMax: params.targetRepsMax ?? 12,
+    currentWeight: null,
+    sets: createEmptySets(setsCount),
+    previousSession: null
+  }
+
+  routines[idx] = {
+    ...routines[idx],
+    exercises: [...routines[idx].exercises, newEx]
+  }
+  saveRoutines(routines)
+  return newEx
+}
+
+/** Elimina un ejercicio de una rutina por su ID de ejercicio */
+export function removeExerciseFromRoutine(routineId: string, exerciseId: string): Routine | undefined {
+  const routines = loadRoutines()
+  const idx = routines.findIndex((r) => r.id === routineId)
+  if (idx === -1) return undefined
+
+  routines[idx] = {
+    ...routines[idx],
+    exercises: routines[idx].exercises.filter((e) => e.id !== exerciseId)
+  }
+  saveRoutines(routines)
+  return routines[idx]
+}
+
+/** Actualiza los ejercicios de una rutina (p. ej. tras finalizar entrenamiento con progresión aplicada) */
+export function updateRoutineExercises(routineId: string, exercises: Exercise[]): void {
+  const routines = loadRoutines()
+  const idx = routines.findIndex((r) => r.id === routineId)
+  if (idx === -1) return
+
+  routines[idx] = { ...routines[idx], exercises }
+  saveRoutines(routines)
 }
 
 /** Carga historial de sesiones */
@@ -161,16 +281,18 @@ export function loadHistory(): SessionRecord[] {
   }
 }
 
-/** Añade una sesión al historial (fecha + volumen total) */
+/** Añade una sesión al historial (fecha, volumen, opcionalmente routineId) */
 export function saveSessionToHistory(
   totalVolume: number,
-  exerciseVolumes?: { exerciseId: string; volume: number }[]
+  exerciseVolumes?: { exerciseId: string; volume: number }[],
+  routineId?: string
 ): void {
   if (typeof window === 'undefined') return
   const record: SessionRecord = {
     date: new Date().toISOString(),
     totalVolume,
-    exerciseVolumes
+    exerciseVolumes,
+    ...(routineId != null && { routineId })
   }
   const history = loadHistory()
   history.push(record)
@@ -181,7 +303,6 @@ export function saveSessionToHistory(
 
 /**
  * Calcula el volumen total de la sesión: suma de (peso × reps) de todas las series completadas.
- * Por ejercicio: peso × reps × series (o suma de peso*reps por set).
  */
 export function computeSessionVolume(exercises: Exercise[]): {
   totalVolume: number
@@ -202,15 +323,14 @@ export function computeSessionVolume(exercises: Exercise[]): {
   return { totalVolume, exerciseVolumes }
 }
 
-/** Aplica progresión: +2.5kg a los que llegaron al tope; guarda previousSession y peso usado; resetea sets para nueva sesión */
+/** Aplica progresión usando checkProgress: +2.5kg si todas las series >= límite superior; si no, mantener peso. Resetea sets. */
 export function applyProgressionAndReset(exercises: Exercise[]): Exercise[] {
   return exercises.map((ex) => {
-    const hitTop = exerciseHitTargetReps(ex)
-    const usedWeight = exerciseUsedCurrentWeight(ex)
+    const shouldIncrease = checkProgress(ex) === 'increase_weight'
     const firstSetWeight = ex.sets[0]?.weight ?? ex.currentWeight
     const weightUsedThisSession = firstSetWeight ?? ex.currentWeight
     const newWeight =
-      hitTop && usedWeight && weightUsedThisSession != null
+      shouldIncrease && weightUsedThisSession != null
         ? weightUsedThisSession + WEIGHT_INCREMENT
         : weightUsedThisSession ?? ex.currentWeight
 

@@ -6,16 +6,17 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { SuggestionBadge } from './suggestion-badge'
 import { SetRow } from './set-row'
-import { Dumbbell, Clock, ChevronDown, ChevronUp } from 'lucide-react'
+import { Dumbbell, Clock, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface ExerciseCardProps {
   exercise: Exercise
   onUpdateSet: (exerciseId: string, setId: string, set: WorkoutSet) => void
   onSetComplete: () => void
+  onRemove?: () => void
 }
 
-export function ExerciseCard({ exercise, onUpdateSet, onSetComplete }: ExerciseCardProps) {
+export function ExerciseCard({ exercise, onUpdateSet, onSetComplete, onRemove }: ExerciseCardProps) {
   const [isExpanded, setIsExpanded] = useState(true)
   const suggestion = generateSuggestion(exercise)
   
@@ -90,7 +91,17 @@ export function ExerciseCard({ exercise, onUpdateSet, onSetComplete }: ExerciseC
             )}
           </div>
 
-          <div className="flex flex-col items-end gap-2">
+          <div className="flex items-center gap-2">
+            {onRemove && (
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onRemove() }}
+                className="p-1.5 rounded-lg text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                aria-label="Eliminar ejercicio"
+              >
+                <Trash2 className="size-4" />
+              </button>
+            )}
             {isExpanded ? (
               <ChevronUp className="size-5 text-muted-foreground" />
             ) : (

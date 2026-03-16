@@ -1,14 +1,15 @@
 'use client'
 
 import { Exercise } from '@/lib/types'
-import { Dumbbell, Calendar, Trophy } from 'lucide-react'
+import { Dumbbell, Calendar, Trophy, ChevronLeft } from 'lucide-react'
 
 interface WorkoutHeaderProps {
   exercises: Exercise[]
   workoutName?: string
+  onBack?: () => void
 }
 
-export function WorkoutHeader({ exercises, workoutName = 'Push Day A' }: WorkoutHeaderProps) {
+export function WorkoutHeader({ exercises, workoutName = 'Entrenamiento', onBack }: WorkoutHeaderProps) {
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets.length, 0)
   const completedSets = exercises.reduce(
     (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
@@ -28,6 +29,16 @@ export function WorkoutHeader({ exercises, workoutName = 'Push Day A' }: Workout
         {/* Top row */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
+            {onBack && (
+              <button
+                type="button"
+                onClick={onBack}
+                className="flex items-center justify-center w-10 h-10 rounded-xl bg-secondary/80 text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+                aria-label="Elegir otra rutina"
+              >
+                <ChevronLeft className="size-5" />
+              </button>
+            )}
             <div className="flex items-center justify-center w-12 h-12 rounded-2xl bg-primary/10 text-primary">
               <Dumbbell className="size-6" />
             </div>
