@@ -12,6 +12,28 @@ const STORAGE_KEY_ROUTINES = 'workout_routines'
 const STORAGE_KEY_HISTORY = 'workout_history'
 const WEIGHT_INCREMENT = 2.5
 
+/**
+ * Persist: guarda el estado en localStorage (equivalente a Zustand persist).
+ * Los datos del gimnasio (rutinas, pesos, historial) no se borran sin señal ni al cerrar el navegador:
+ * localStorage está activo en la PWA y funciona offline; el Service Worker cachea la app.
+ */
+export const persist = {
+  /** Guarda las rutinas (y sus ejercicios/pesos) en localStorage */
+  routines(routines: Routine[]): void {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem(STORAGE_KEY_ROUTINES, serializeRoutines(routines))
+    } catch (_) {}
+  },
+  /** Guarda el historial de sesiones en localStorage */
+  history(records: SessionRecord[]): void {
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(records))
+    } catch (_) {}
+  }
+}
+
 /** Serializa ejercicios para localStorage (Date → string) */
 function serializeExercises(exercises: Exercise[]): unknown[] {
   return exercises.map((ex) => ({
@@ -166,37 +188,40 @@ function deserializeRoutines(json: string): Routine[] {
   }))
 }
 
-/** Carga rutinas desde localStorage; si no hay datos o es estructura antigua (solo Push/Pull/Legs), usa las 5 rutinas semanales */
+/**
+ * Carga rutinas desde localStorage.
+ * Si el storage está vacío, carga las 5 rutinas semanales por defecto y las persiste.
+ * Si hay estructura antigua (solo Push/Pull/Legs), reemplaza por las 5 rutinas.
+ */
 export function loadRoutines(): Routine[] {
   if (typeof window === 'undefined') return getDefaultRoutines()
   try {
     const stored = localStorage.getItem(STORAGE_KEY_ROUTINES)
-    if (!stored) {
-      const initial = getDefaultRoutines()
-      saveRoutines(initial)
-      return initial
+    if (!stored || stored === 'null' || stored === '') {
+      const defaultRoutines = getDefaultRoutines()
+      persist.routines(defaultRoutines)
+      return defaultRoutines
     }
     const routines = deserializeRoutines(stored)
     const expectedIds = ['lunes-empuje', 'martes-traccion', 'miercoles-pierna', 'jueves-torso', 'viernes-pierna-retoque']
     const hasAllFive = expectedIds.every((id) => routines.some((r) => r.id === id))
     const hasAnyOld = routines.some((r) => ['empuje', 'traccion', 'pierna'].includes(r.id))
     if (!hasAllFive || (routines.length <= 3 && hasAnyOld)) {
-      const initial = getDefaultRoutines()
-      saveRoutines(initial)
-      return initial
+      const defaultRoutines = getDefaultRoutines()
+      persist.routines(defaultRoutines)
+      return defaultRoutines
     }
     return routines
   } catch {
-    return getDefaultRoutines()
+    const defaultRoutines = getDefaultRoutines()
+    persist.routines(defaultRoutines)
+    return defaultRoutines
   }
 }
 
-/** Guarda rutinas en localStorage */
+/** Guarda rutinas en localStorage (usa persist) */
 export function saveRoutines(routines: Routine[]): void {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(STORAGE_KEY_ROUTINES, serializeRoutines(routines))
-  } catch (_) {}
+  persist.routines(routines)
 }
 
 /** Obtiene una rutina por ID */
@@ -296,9 +321,7 @@ export function saveSessionToHistory(
   }
   const history = loadHistory()
   history.push(record)
-  try {
-    localStorage.setItem(STORAGE_KEY_HISTORY, JSON.stringify(history))
-  } catch (_) {}
+  persist.history(history)
 }
 
 /**
@@ -323,7 +346,12 @@ export function computeSessionVolume(exercises: Exercise[]): {
   return { totalVolume, exerciseVolumes }
 }
 
-/** Aplica progresión usando checkProgress: +2.5kg si todas las series >= límite superior; si no, mantener peso. Resetea sets. */
+/**
+ * Se ejecuta al pulsar "Finalizar Rutina": calcula los nuevos pesos sugeridos.
+ * - Si en un ejercicio todas las series completadas tienen reps >= límite superior del rango (ej. 8 en 6-8) → +2.5kg.
+ * - Si no se alcanzó el máximo en todas las series → mantener peso.
+ * Además guarda previousSession y resetea los sets para la próxima sesión.
+ */
 export function applyProgressionAndReset(exercises: Exercise[]): Exercise[] {
   return exercises.map((ex) => {
     const shouldIncrease = checkProgress(ex) === 'increase_weight'
