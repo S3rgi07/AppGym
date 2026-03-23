@@ -119,12 +119,16 @@ export function ExerciseCard({ exercise, onUpdateSet, onSetComplete, onRemove }:
       {isExpanded && (
         <CardContent className="pt-0 space-y-2">
           {/* Column headers */}
-          <div className="grid grid-cols-[auto_1fr_1fr_auto_auto] gap-2 px-3 text-xs text-muted-foreground font-medium">
-            <span className="w-8 text-center">#</span>
-            <span className="text-center">Peso</span>
-            <span className="text-center">Reps</span>
-            <span className="w-[70px] text-center">RPE</span>
-            <span className="w-11"></span>
+          <div className="flex flex-wrap items-center gap-2 px-3 text-xs font-medium text-muted-foreground sm:flex-nowrap sm:gap-3">
+            <span className="flex h-6 w-10 shrink-0 items-center justify-center">#</span>
+            <span className="min-w-[6.75rem] flex-1 basis-[42%] text-center sm:min-w-[7.5rem] sm:flex-1 sm:basis-0">
+              Peso
+            </span>
+            <span className="min-w-[5.75rem] flex-1 basis-[38%] text-center sm:min-w-[6.5rem] sm:flex-1 sm:basis-0">
+              Reps
+            </span>
+            <span className="w-[4.75rem] shrink-0 text-center sm:w-20">RPE</span>
+            <span className="ml-auto w-12 shrink-0 sm:ml-0" aria-hidden />
           </div>
 
           {/* Set rows */}

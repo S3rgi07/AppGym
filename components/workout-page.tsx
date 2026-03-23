@@ -33,7 +33,8 @@ export function WorkoutPage() {
   const [selectedRoutineId, setSelectedRoutineId] = useState<string | null>(null)
   const [exercises, setExercises] = useState<Exercise[]>([])
   const [hydrated, setHydrated] = useState(false)
-  const [timerActive, setTimerActive] = useState(false)
+  /** Abre el panel lateral de descanso (Sheet) al completar una serie */
+  const [restSheetOpen, setRestSheetOpen] = useState(false)
   const [timerKey, setTimerKey] = useState(0)
   const [showSavedMessage, setShowSavedMessage] = useState(false)
   const [addExerciseOpen, setAddExerciseOpen] = useState(false)
@@ -73,11 +74,11 @@ export function WorkoutPage() {
 
   const handleSetComplete = useCallback(() => {
     setTimerKey((prev) => prev + 1)
-    setTimerActive(true)
+    setRestSheetOpen(true)
   }, [])
 
-  const handleCloseTimer = useCallback(() => {
-    setTimerActive(false)
+  const handleCloseRestSheet = useCallback(() => {
+    setRestSheetOpen(false)
   }, [])
 
   const totalSets = exercises.reduce((acc, ex) => acc + ex.sets.length, 0)
@@ -303,8 +304,8 @@ export function WorkoutPage() {
 
       <RestTimer
         key={timerKey}
-        isActive={timerActive}
-        onClose={handleCloseTimer}
+        isActive={restSheetOpen}
+        onClose={handleCloseRestSheet}
       />
     </div>
   )

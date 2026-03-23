@@ -1,9 +1,16 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { formatTime } from '@/lib/types'
 import { Button } from '@/components/ui/button'
-import { Play, Pause, RotateCcw, X, Plus, Minus } from 'lucide-react'
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetDescription,
+} from '@/components/ui/sheet'
+import { Play, Pause, RotateCcw, Plus, Minus } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 interface RestTimerProps {
@@ -14,204 +21,275 @@ interface RestTimerProps {
 
 const PRESET_TIMES = [60, 90, 120, 180]
 
-export function RestTimer({ isActive, onClose, autoStartTime = 90 }: RestTimerProps) {
-  const [time, setTime] = useState(autoStartTime)
-  const [initialTime, setInitialTime] = useState(autoStartTime)
-  const [isRunning, setIsRunning] = useState(false)
-  const [isMinimized, setIsMinimized] = useState(false)
+function vibrateDone() {
+  if (typeof navigator !== 'undefined' && navigator.vibrate) {
+    navigator.vibrate([200, 100, 200])
+  }
+}
 
-  // Auto-start when activated
+export function RestTimer({ isActive, onClose, autoStartTime = 90 }: RestTimerProps) {
+  const [totalMs, setTotalMs] = useState(() => autoStartTime * 1000)
+  /** Hora absoluta (ms) en la que termina el descanso mientras corre; null si está pausado */
+  const [phaseEndMs, setPhaseEndMs] = useState<number | null>(null)
+  const [pausedRemainingMs, setPausedRemainingMs] = useState(0)
+  const [isRunning, setIsRunning] = useState(false)
+  /** Fuerza re-render cada segundo para comparar Date.now() con phaseEndMs */
+  const [, setTick] = useState(0)
+
+  const phaseEndRef = useRef<number | null>(null)
+  const isRunningRef = useRef(false)
+  const finishedVibrateRef = useRef(false)
+
   useEffect(() => {
-    if (isActive) {
-      setTime(autoStartTime)
-      setInitialTime(autoStartTime)
-      setIsRunning(true)
-      setIsMinimized(false)
+    phaseEndRef.current = phaseEndMs
+  }, [phaseEndMs])
+
+  useEffect(() => {
+    isRunningRef.current = isRunning
+  }, [isRunning])
+
+  const getRemainingMs = () => {
+    if (isRunning && phaseEndMs != null) {
+      return Math.max(0, phaseEndMs - Date.now())
     }
+    return pausedRemainingMs
+  }
+
+  const remainingMs = getRemainingMs()
+  const displaySeconds = Math.max(0, Math.ceil(remainingMs / 1000))
+  const progress = totalMs > 0 ? Math.min(100, ((totalMs - remainingMs) / totalMs) * 100) : 0
+  const isFinishedDisplay =
+    displaySeconds === 0 && !isRunning && pausedRemainingMs === 0 && phaseEndMs === null
+
+  // Al completar una serie: abrir sheet y arrancar descanso desde "ahora"
+  useEffect(() => {
+    if (!isActive) return
+    const ms = autoStartTime * 1000
+    finishedVibrateRef.current = false
+    setTotalMs(ms)
+    setPausedRemainingMs(0)
+    const end = Date.now() + ms
+    setPhaseEndMs(end)
+    setIsRunning(true)
   }, [isActive, autoStartTime])
 
-  // Timer countdown
+  // Cada segundo: refrescar UI y comprobar si ya pasó la hora de fin (preciso tras minimizar / bloqueo)
   useEffect(() => {
-    let interval: NodeJS.Timeout
+    if (!isActive || !isRunning) return
+    const id = window.setInterval(() => {
+      setTick((t) => t + 1)
+      const end = phaseEndRef.current
+      if (end != null && end <= Date.now()) {
+        setIsRunning(false)
+        setPhaseEndMs(null)
+        setPausedRemainingMs(0)
+        if (!finishedVibrateRef.current) {
+          finishedVibrateRef.current = true
+          vibrateDone()
+        }
+      }
+    }, 1000)
+    return () => clearInterval(id)
+  }, [isActive, isRunning])
 
-    if (isRunning && time > 0) {
-      interval = setInterval(() => {
-        setTime((prev) => prev - 1)
-      }, 1000)
-    } else if (time === 0 && isRunning) {
-      setIsRunning(false)
-      // Vibrate if supported
-      if (typeof navigator !== 'undefined' && navigator.vibrate) {
-        navigator.vibrate([200, 100, 200])
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || !isActive) return
+      setTick((t) => t + 1)
+      const end = phaseEndRef.current
+      if (isRunningRef.current && end != null && end <= Date.now()) {
+        setIsRunning(false)
+        setPhaseEndMs(null)
+        setPausedRemainingMs(0)
+        if (!finishedVibrateRef.current) {
+          finishedVibrateRef.current = true
+          vibrateDone()
+        }
       }
     }
-
-    return () => clearInterval(interval)
-  }, [isRunning, time])
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [isActive])
 
   const handlePlayPause = () => {
-    setIsRunning(!isRunning)
+    if (displaySeconds === 0 && !isRunning) {
+      const ms = totalMs > 0 ? totalMs : autoStartTime * 1000
+      setTotalMs(ms)
+      setPausedRemainingMs(0)
+      setPhaseEndMs(Date.now() + ms)
+      setIsRunning(true)
+      finishedVibrateRef.current = false
+      return
+    }
+    if (isRunning && phaseEndMs != null) {
+      const left = Math.max(0, phaseEndMs - Date.now())
+      setPausedRemainingMs(left)
+      setPhaseEndMs(null)
+      setIsRunning(false)
+    } else {
+      const ms = pausedRemainingMs > 0 ? pausedRemainingMs : totalMs
+      setPhaseEndMs(Date.now() + ms)
+      setPausedRemainingMs(0)
+      setIsRunning(true)
+    }
   }
 
   const handleReset = () => {
-    setTime(initialTime)
     setIsRunning(false)
+    setPhaseEndMs(null)
+    setPausedRemainingMs(totalMs)
+    finishedVibrateRef.current = false
   }
 
   const handleAddTime = () => {
-    setTime((prev) => prev + 15)
-    setInitialTime((prev) => prev + 15)
+    const delta = 15_000
+    setTotalMs((t) => t + delta)
+    if (isRunning && phaseEndMs != null) {
+      setPhaseEndMs((end) => (end != null ? end + delta : end))
+    } else {
+      setPausedRemainingMs((p) => p + delta)
+    }
   }
 
   const handleSubtractTime = () => {
-    if (time > 15) {
-      setTime((prev) => prev - 15)
-      setInitialTime((prev) => Math.max(15, prev - 15))
+    if (remainingMs <= 15_000) return
+    const delta = 15_000
+    setTotalMs((t) => Math.max(15_000, t - delta))
+    if (isRunning && phaseEndMs != null) {
+      setPhaseEndMs((end) => (end != null ? end - delta : end))
+    } else {
+      setPausedRemainingMs((p) => Math.max(15_000, p - delta))
     }
   }
 
   const handlePresetTime = (seconds: number) => {
-    setTime(seconds)
-    setInitialTime(seconds)
+    const ms = seconds * 1000
+    finishedVibrateRef.current = false
+    setTotalMs(ms)
+    setPausedRemainingMs(0)
+    setPhaseEndMs(Date.now() + ms)
     setIsRunning(true)
   }
 
-  const progress = initialTime > 0 ? ((initialTime - time) / initialTime) * 100 : 0
-  const isFinished = time === 0
-
-  if (!isActive) return null
-
-  // Minimized view
-  if (isMinimized) {
-    return (
-      <button
-        onClick={() => setIsMinimized(false)}
-        className={cn(
-          'fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-3 rounded-full shadow-lg transition-all',
-          isFinished
-            ? 'bg-primary text-primary-foreground animate-pulse'
-            : isRunning
-            ? 'bg-card border border-border'
-            : 'bg-secondary'
-        )}
-      >
-        <span className="text-lg font-mono font-bold">{formatTime(time)}</span>
-      </button>
-    )
-  }
-
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-50 safe-bottom">
-      <div
-        className={cn(
-          'mx-4 mb-4 p-4 rounded-2xl shadow-2xl border transition-all',
-          isFinished
-            ? 'bg-primary/20 border-primary/30'
-            : 'bg-card border-border'
-        )}
+    <Sheet open={isActive} onOpenChange={(open) => !open && onClose()}>
+      <SheetContent
+        side="right"
+        className="flex w-full flex-col gap-0 overflow-y-auto border-l sm:max-w-sm"
       >
-        {/* Progress bar */}
-        <div className="h-1 bg-secondary rounded-full mb-4 overflow-hidden">
+        <SheetHeader className="border-b border-border pb-4 text-left">
+          <SheetTitle>Descanso</SheetTitle>
+          <SheetDescription>
+            El tiempo restante se calcula con la hora del dispositivo (Date.now()), para que siga siendo
+            correcto si minimizas la app o apagas la pantalla.
+          </SheetDescription>
+        </SheetHeader>
+
+        <div className="flex flex-1 flex-col gap-6 px-4 pb-8 pt-6">
           <div
             className={cn(
-              'h-full transition-all duration-1000 ease-linear',
-              isFinished ? 'bg-primary' : 'bg-primary/70'
+              'rounded-2xl border p-4 transition-all',
+              isFinishedDisplay
+                ? 'border-primary/30 bg-primary/10'
+                : 'border-border bg-card'
             )}
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-
-        <div className="flex items-center justify-between gap-4">
-          {/* Timer display */}
-          <div className="flex items-center gap-3">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleSubtractTime}
-              className="h-10 w-10"
-            >
-              <Minus className="size-4" />
-              <span className="sr-only">Restar 15 segundos</span>
-            </Button>
-            
-            <div
-              className={cn(
-                'text-4xl font-mono font-bold tracking-tight min-w-[100px] text-center',
-                isFinished && 'text-primary animate-pulse'
-              )}
-            >
-              {formatTime(time)}
+          >
+            <div className="mb-4 h-1.5 overflow-hidden rounded-full bg-secondary">
+              <div
+                className={cn(
+                  'h-full transition-all duration-300 ease-linear',
+                  isFinishedDisplay ? 'bg-primary' : 'bg-primary/70'
+                )}
+                style={{ width: `${progress}%` }}
+              />
             </div>
-            
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleAddTime}
-              className="h-10 w-10"
-            >
-              <Plus className="size-4" />
-              <span className="sr-only">Añadir 15 segundos</span>
-            </Button>
+
+            <div className="flex flex-col items-center gap-6">
+              <div className="flex w-full max-w-[280px] items-center justify-center gap-2 sm:gap-3">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleSubtractTime}
+                  className="h-11 w-11 shrink-0"
+                >
+                  <Minus className="size-5" />
+                  <span className="sr-only">Restar 15 segundos</span>
+                </Button>
+
+                <div
+                  className={cn(
+                    'min-w-[7rem] flex-1 text-center font-mono text-4xl font-bold tabular-nums tracking-tight',
+                    isFinishedDisplay && 'animate-pulse text-primary'
+                  )}
+                >
+                  {formatTime(displaySeconds)}
+                </div>
+
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleAddTime}
+                  className="h-11 w-11 shrink-0"
+                >
+                  <Plus className="size-5" />
+                  <span className="sr-only">Añadir 15 segundos</span>
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-4">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleReset}
+                  className="h-12 w-12"
+                >
+                  <RotateCcw className="size-5" />
+                  <span className="sr-only">Reiniciar temporizador</span>
+                </Button>
+
+                <Button
+                  type="button"
+                  variant={isRunning ? 'secondary' : 'default'}
+                  size="icon"
+                  onClick={handlePlayPause}
+                  className={cn(
+                    'h-16 w-16 rounded-full',
+                    isFinishedDisplay && 'bg-primary hover:bg-primary/90'
+                  )}
+                >
+                  {isRunning ? <Pause className="size-7" /> : <Play className="ml-0.5 size-7" />}
+                  <span className="sr-only">
+                    {isRunning ? 'Pausar' : 'Iniciar'} temporizador
+                  </span>
+                </Button>
+              </div>
+            </div>
           </div>
 
-          {/* Controls */}
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleReset}
-              className="h-12 w-12"
-            >
-              <RotateCcw className="size-5" />
-              <span className="sr-only">Reiniciar temporizador</span>
-            </Button>
-            
-            <Button
-              variant={isRunning ? 'secondary' : 'default'}
-              size="icon"
-              onClick={handlePlayPause}
-              className={cn(
-                'h-14 w-14 rounded-full',
-                isFinished && 'bg-primary hover:bg-primary/90'
-              )}
-            >
-              {isRunning ? (
-                <Pause className="size-6" />
-              ) : (
-                <Play className="size-6 ml-0.5" />
-              )}
-              <span className="sr-only">
-                {isRunning ? 'Pausar' : 'Iniciar'} temporizador
-              </span>
-            </Button>
-
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setIsMinimized(true)}
-              className="h-12 w-12"
-            >
-              <X className="size-5" />
-              <span className="sr-only">Minimizar temporizador</span>
-            </Button>
+          <div>
+            <p className="mb-2 text-center text-xs font-medium text-muted-foreground">
+              Duración rápida
+            </p>
+            <div className="flex flex-wrap justify-center gap-2">
+              {PRESET_TIMES.map((preset) => (
+                <Button
+                  key={preset}
+                  type="button"
+                  variant={Math.round(totalMs / 1000) === preset ? 'default' : 'secondary'}
+                  size="sm"
+                  onClick={() => handlePresetTime(preset)}
+                  className="h-9 px-3 text-xs font-medium"
+                >
+                  {formatTime(preset)}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
-
-        {/* Preset times */}
-        <div className="flex items-center justify-center gap-2 mt-4">
-          {PRESET_TIMES.map((preset) => (
-            <Button
-              key={preset}
-              variant={initialTime === preset ? 'default' : 'secondary'}
-              size="sm"
-              onClick={() => handlePresetTime(preset)}
-              className="h-8 px-3 text-xs font-medium"
-            >
-              {preset >= 60 ? `${preset / 60}:00` : `0:${preset}`}
-            </Button>
-          ))}
-        </div>
-      </div>
-    </div>
+      </SheetContent>
+    </Sheet>
   )
 }

@@ -2,6 +2,7 @@ export interface WorkoutSet {
   id: string
   weight: number | null
   reps: number | null
+  /** RPE numérico (enteros o medios, p. ej. 8.5); no usar enteros forzados en la UI */
   rpe: number | null
   completed: boolean
   completedAt?: Date
@@ -135,9 +136,11 @@ export function getWorkoutCompletionSuggestion(exercises: Exercise[]): { type: '
   return result
 }
 
+/** mm:ss a partir de segundos totales (división entera + módulo; evita 1.5:00 u otros decimales) */
 export function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60)
-  const secs = seconds % 60
+  const totalSec = Math.floor(seconds)
+  const mins = Math.floor(totalSec / 60)
+  const secs = totalSec % 60
   return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 

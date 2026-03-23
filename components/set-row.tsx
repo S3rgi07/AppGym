@@ -1,16 +1,8 @@
 'use client'
 
-import { useState } from 'react'
 import { WorkoutSet } from '@/lib/types'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 import { Check, RotateCcw } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
@@ -35,8 +27,12 @@ export function SetRow({ set, setNumber, currentWeight, onUpdate, onComplete }: 
   }
 
   const handleRpeChange = (value: string) => {
-    const rpe = parseInt(value)
-    onUpdate({ ...set, rpe })
+    if (value === '') {
+      onUpdate({ ...set, rpe: null })
+      return
+    }
+    const rpe = parseFloat(value)
+    onUpdate({ ...set, rpe: Number.isNaN(rpe) ? null : rpe })
   }
 
   const handleComplete = () => {
@@ -54,22 +50,25 @@ export function SetRow({ set, setNumber, currentWeight, onUpdate, onComplete }: 
   const effectiveWeight = set.weight ?? currentWeight ?? null
   const isValid = effectiveWeight !== null && set.reps !== null && set.rpe !== null
 
+  const inputBase =
+    'h-12 w-full min-h-12 text-center text-lg font-semibold tabular-nums px-3 py-2 sm:px-4'
+
   return (
     <div
       className={cn(
-        'grid grid-cols-[auto_1fr_1fr_auto_auto] gap-2 items-center p-3 rounded-lg transition-all',
+        'flex flex-wrap items-center gap-2 sm:gap-3 rounded-lg p-3 transition-all sm:flex-nowrap',
         set.completed
           ? 'bg-primary/10 border border-primary/20'
           : 'bg-secondary/50'
       )}
     >
       {/* Set Number */}
-      <div className="flex items-center justify-center w-8 h-8 rounded-full bg-secondary text-muted-foreground text-sm font-medium">
+      <div className="flex h-12 w-10 shrink-0 items-center justify-center rounded-full bg-secondary text-sm font-medium text-muted-foreground">
         {setNumber}
       </div>
 
-      {/* Weight Input */}
-      <div className="relative">
+      {/* Weight: ancho mínimo amplio para leer kg con decimales */}
+      <div className="relative min-w-[6.75rem] flex-1 basis-[42%] sm:min-w-[7.5rem] sm:flex-1 sm:basis-0">
         <Input
           type="number"
           inputMode="decimal"
@@ -77,18 +76,15 @@ export function SetRow({ set, setNumber, currentWeight, onUpdate, onComplete }: 
           value={set.weight ?? ''}
           onChange={(e) => handleWeightChange(e.target.value)}
           disabled={set.completed}
-          className={cn(
-            'h-11 text-center text-base font-medium pr-8',
-            set.completed && 'opacity-70'
-          )}
+          className={cn(inputBase, 'pr-10 sm:pr-11', set.completed && 'opacity-70')}
         />
-        <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground">
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-muted-foreground sm:right-3.5">
           kg
         </span>
       </div>
 
-      {/* Reps Input */}
-      <div className="relative">
+      {/* Reps */}
+      <div className="relative min-w-[5.75rem] flex-1 basis-[38%] sm:min-w-[6.5rem] sm:flex-1 sm:basis-0">
         <Input
           type="number"
           inputMode="numeric"
@@ -96,64 +92,55 @@ export function SetRow({ set, setNumber, currentWeight, onUpdate, onComplete }: 
           value={set.reps ?? ''}
           onChange={(e) => handleRepsChange(e.target.value)}
           disabled={set.completed}
-          className={cn(
-            'h-11 text-center text-base font-medium',
-            set.completed && 'opacity-70'
-          )}
+          className={cn(inputBase, set.completed && 'opacity-70')}
         />
       </div>
 
-      {/* RPE Select */}
-      <Select
-        value={set.rpe?.toString() ?? ''}
-        onValueChange={handleRpeChange}
-        disabled={set.completed}
-      >
-        <SelectTrigger
-          className={cn(
-            'w-[70px] h-11 text-base font-medium',
-            set.completed && 'opacity-70'
-          )}
-        >
-          <SelectValue placeholder="RPE" />
-        </SelectTrigger>
-        <SelectContent>
-          {[6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10].map((rpe) => (
-            <SelectItem key={rpe} value={rpe.toString()}>
-              {rpe}
-            </SelectItem>
-          ))}
-        </SelectContent>
-      </Select>
+      <div className="relative min-w-[4.75rem] w-[4.75rem] shrink-0 sm:w-20">
+        <Input
+          type="number"
+          inputMode="decimal"
+          step="0.5"
+          min={1}
+          max={10}
+          placeholder="RPE"
+          value={set.rpe ?? ''}
+          onChange={(e) => handleRpeChange(e.target.value)}
+          disabled={set.completed}
+          className={cn(inputBase, 'px-2 sm:px-3', set.completed && 'opacity-70')}
+        />
+      </div>
 
-      {/* Complete/Reset Button */}
-      {set.completed ? (
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={handleReset}
-          className="h-11 w-11 text-muted-foreground hover:text-foreground"
-        >
-          <RotateCcw className="size-5" />
-          <span className="sr-only">Resetear serie</span>
-        </Button>
-      ) : (
-        <Button
-          variant="default"
-          size="icon"
-          onClick={handleComplete}
-          disabled={!isValid}
-          className={cn(
-            'h-11 w-11 transition-all',
-            isValid
-              ? 'bg-primary hover:bg-primary/90 text-primary-foreground'
-              : 'bg-secondary text-muted-foreground'
-          )}
-        >
-          <Check className="size-5" />
-          <span className="sr-only">Completar serie</span>
-        </Button>
-      )}
+      {/* Complete/Reset */}
+      <div className="ml-auto flex shrink-0 sm:ml-0">
+        {set.completed ? (
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleReset}
+            className="h-12 w-12 text-muted-foreground hover:text-foreground"
+          >
+            <RotateCcw className="size-5" />
+            <span className="sr-only">Resetear serie</span>
+          </Button>
+        ) : (
+          <Button
+            variant="default"
+            size="icon"
+            onClick={handleComplete}
+            disabled={!isValid}
+            className={cn(
+              'h-12 w-12 transition-all',
+              isValid
+                ? 'bg-primary text-primary-foreground hover:bg-primary/90'
+                : 'bg-secondary text-muted-foreground'
+            )}
+          >
+            <Check className="size-5" />
+            <span className="sr-only">Completar serie</span>
+          </Button>
+        )}
+      </div>
     </div>
   )
 }
